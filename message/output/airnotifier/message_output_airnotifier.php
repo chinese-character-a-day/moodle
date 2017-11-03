@@ -24,7 +24,7 @@
  * @since Moodle 2.7
  */
 
-
+require_once(dirname(__FILE__) . '/../../../config.php');
 require_once($CFG->dirroot . '/message/output/lib.php');
 
 /**
@@ -45,6 +45,8 @@ class message_output_airnotifier extends message_output {
     public function send_message($eventdata) {
         global $CFG, $DB;
         require_once($CFG->libdir . '/filelib.php');
+
+		error_log('message/output/airnotifier/message_output_airnotifier: send_message');
 
         if (!empty($CFG->noemailever)) {
             // Hidden setting for development sites, set in config.php if needed.
@@ -104,7 +106,12 @@ class message_output_airnotifier extends message_output {
 
         // We are sending to message to all devices.
         $airnotifiermanager = new message_airnotifier_manager();
+
+		error_log('message/output/airnotifier/message_output_airnotifier: send_message: get_user_devices: appName: '. $CFG->airnotifiermobileappname . ' userid: '. $eventdata->userto->id);
+
         $devicetokens = $airnotifiermanager->get_user_devices($CFG->airnotifiermobileappname, $eventdata->userto->id);
+
+		error_log('message/output/airnotifier/message_output_airnotifier: send_message: devicetokens: '. count($devicetokens));
 
         foreach ($devicetokens as $devicetoken) {
 
@@ -119,11 +126,25 @@ class message_output_airnotifier extends message_output {
             $curl = new curl;
             $curl->setHeader($header);
 
+            // JWK - 2017-11-1
+            $data = array(
+                'title'     => $extra->subject,
+                'text'      => $extra->smallmessage
+            );
+
+            $gcm = array(
+                'data'      => $data
+            );
+
             $params = array(
                 'device'    => $devicetoken->platform,
                 'token'     => $devicetoken->pushid,
-                'extra'     => $extra
+                'extra'     => $extra,
+                'gcm'       => $gcm
             );
+
+
+		    error_log('message/output/airnotifier/message_output_airnotifier: send_message: params: '. json_encode($params));
 
             // JSON POST raw body request.
             $resp = $curl->post($serverurl, json_encode($params));

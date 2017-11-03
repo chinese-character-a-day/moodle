@@ -75,6 +75,8 @@ class message_airnotifier_manager {
             $userid = $USER->id;
         }
 
+		error_log('message_airnotifier_manager get_user_devices: '.$appname.' userid: '.$userid);
+
         $devices = array();
 
         $params = array('appid' => $appname, 'userid' => $userid);
@@ -83,13 +85,20 @@ class message_airnotifier_manager {
         // We are going to allow only ios devices (since these are the ones that supports PUSH notifications).
         $userdevices = $DB->get_records('user_devices', $params);
         foreach ($userdevices as $device) {
-            if (core_text::strtolower($device->platform)) {
+	    	$lowercaseDevPlatform = core_text::strtolower($device->platform);
+	        if ($lowercaseDevPlatform) {
+
+				error_log('message_airnotifier_manager get_user_devices: device.platform: '.$device->platform.' id: '.$device->id);
+
                 // Check if the device is known by airnotifier.
                 if (!$airnotifierdev = $DB->get_record('message_airnotifier_devices',
                         array('userdeviceid' => $device->id))) {
 
+				    error_log('message_airnotifier_manager get_user_devices: airnotifierdev doesnt exist for id: '.$device->id);
+
                     // We have to create the device token in airnotifier.
-                    if (! $this->create_token($device->pushid)) {
+                    if (! $this->create_token($device->pushid, $lowercaseDevPlatform)) {
+						error_log('message_airnotifier_manager get_user_devices: airnotifierdev token exist for pushid: '.$device->pushid);                    	
                         continue;
                     }
 
@@ -148,7 +157,7 @@ class message_airnotifier_manager {
      * @param string $token The token to be created
      * @return bool True if all was right
      */
-    private function create_token($token) {
+    private function create_token($token, $platform) {
         global $CFG;
 
         if (!$this->is_system_configured()) {
@@ -157,21 +166,40 @@ class message_airnotifier_manager {
 
         require_once($CFG->libdir . '/filelib.php');
 
-        $serverurl = $CFG->airnotifierurl . ':' . $CFG->airnotifierport . '/tokens/' . $token;
+		$serverurl = $CFG->airnotifierurl . ':' . $CFG->airnotifierport . '/api/v2/tokens';
         $header = array('Accept: application/json', 'X-AN-APP-NAME: ' . $CFG->airnotifierappname,
             'X-AN-APP-KEY: ' . $CFG->airnotifieraccesskey);
+
+		error_log('message_airnotifier_manager create_token: X-AN-APP-NAME: '.$CFG->airnotifierappname.' X-AN-APP-KEY: ' . $CFG->airnotifieraccesskey);
+
         $curl = new curl;
         $curl->setHeader($header);
-        $params = array();
-        $resp = $curl->post($serverurl, $params);
+        
+		$params = array(
+			'device'    => $platform,
+			'token'     => $token,
+			'channel'     => 'default'
+        );
+
+		error_log('message_airnotifier_manager create_token: post: serverurl: ' . $serverurl);
+		error_log('message_airnotifier_manager create_token: post: params:' . json_encode($params));
+
+		$resp = $curl->post($serverurl, json_encode($params));
+
+		error_log('message_airnotifier_manager create_token: response:' . $resp);
 
         if ($token = json_decode($resp, true)) {
+            error_log('message_airnotifier_manager create_token: response-token:' . $token);
+
             if (!empty($token['status'])) {
                 return $token['status'] == 'ok' || $token['status'] == 'token exists';
             }
         }
+
         debugging("Unexpected response from the Airnotifier server: $resp");
-        return false;
+
+		// nothing to decode in /api/v2/tokens response!
+		return true;
     }
 
     /**
